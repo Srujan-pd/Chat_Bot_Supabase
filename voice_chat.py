@@ -4,7 +4,7 @@ import uuid, os
 
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
-model = genai.GenerativeModel("models/gemini-flash-latest")
+model = genai.GenerativeModel("gemini-2.0-flash")
 
 speech_client = speech.SpeechClient()
 tts_client = texttospeech.TextToSpeechClient()
@@ -56,4 +56,3 @@ def text_to_voice(text: str) -> str:
         out.write(response.audio_content)
 
     return filename
-

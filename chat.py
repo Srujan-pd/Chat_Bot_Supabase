@@ -15,13 +15,18 @@ def get_db():
     finally:
         db.close()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel("models/gemini-flash-latest")
+# Get API key from environment
+api_key = os.environ.get("GEMINI_API_KEY")
+
+if api_key:
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    print("✅ Gemini API initialized")
 else:
     model = None
+    print("❌ GEMINI_API_KEY not found")
 
+# Dictionary to store chat histories per user
 chat_histories = {}
 
 class ChatRequest(BaseModel):
@@ -31,33 +36,33 @@ class ChatRequest(BaseModel):
 @router.post("/")
 def chat(req: ChatRequest, db: Session = Depends(get_db)):
     if not model:
-        return {"reply": "AI Configuration Error: API Key missing."}
+        raise HTTPException(status_code=500, detail="AI Configuration Error")
     
     try:
         user_id = req.user_id
         user_message = req.message
 
-        # Initialize history
         if user_id not in chat_histories:
             chat_histories[user_id] = []
 
-        chat_histories[user_id].append({"role": "user", "parts": [user_message]})
-        
-        # Generate AI response
-        response = model.generate_content(chat_histories[user_id])
+        chat_session = model.start_chat(history=chat_histories[user_id])
+        response = chat_session.send_message(user_message)
         bot_reply = response.text
-        
-        chat_histories[user_id].append({"role": "model", "parts": [bot_reply]})
 
-        # Save to Postgres
+        chat_histories[user_id] = chat_session.history
+
+        # Save to database
         new_chat = Chat(user_id=user_id, question=user_message, answer=bot_reply)
         db.add(new_chat)
         db.commit()
+        print(f"✅ Saved chat to database")
 
         return {"reply": bot_reply}
+        
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"DEBUG - API Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"AI Service Error: {str(e)}")
 
 @router.get("/history/{user_id}")
 def history(user_id: int, db: Session = Depends(get_db)):
